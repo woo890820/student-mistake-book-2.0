@@ -48,11 +48,21 @@ jobs:
           if [ -z "$SRC_PUB" ]; then echo "错误：找不到 pubspec.yaml"; exit 1; fi
           if [ -z "$SRC_TPL" ]; then echo "错误：找不到 docx 模板"; exit 1; fi
 
-          # 归一化为标准名
-          cp "$SRC_MAIN" main.dart
-          cp "$SRC_PUB" pubspec.yaml
-          cp "$SRC_TPL" mistake_template.docx
-          echo "已归一化为 main.dart / pubspec.yaml / mistake_template.docx"
+          # 归一化为标准名（源文件与目标同名时跳过，避免 cp 报 same file）
+          safe_copy() {
+            local src="$1"
+            local dst="$2"
+            if [ "$src" = "./$dst" ] || [ "$src" = "$dst" ]; then
+              echo "跳过（已是标准名）: $dst"
+            else
+              cp "$src" "$dst"
+              echo "已复制: $src -> $dst"
+            fi
+          }
+          safe_copy "$SRC_MAIN" main.dart
+          safe_copy "$SRC_PUB" pubspec.yaml
+          safe_copy "$SRC_TPL" mistake_template.docx
+          echo "归一化完成：main.dart / pubspec.yaml / mistake_template.docx"
 
           # 自动修复旧代码里的联网字体（CI 环境下载字体会失败）
           if grep -q 'PdfGoogleFonts' main.dart; then
@@ -61,7 +71,7 @@ jobs:
             sed -i 's/await PdfGoogleFonts\.notoSansSCBold()/pw.Font.helveticaBold()/g' main.dart
             sed -i 's/PdfGoogleFonts\.notoSansSCRegular()/pw.Font.helvetica()/g' main.dart
             sed -i 's/PdfGoogleFonts\.notoSansSCBold()/pw.Font.helveticaBold()/g' main.dart
-            echo "替换完成，剩余 PdfGoogleFonts 数量: $(grep -c PdfGoogleFonts main.dart || true)"
+            echo "替换完成"
           fi
 
           # 自动修复 permission_handler：若代码里有 import 但 pubspec 里没声明，删掉相关 import
@@ -330,12 +340,20 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      - name: 代码静态分析（显示所有错误行号）
+      - name: 代码预检（有 error 就直接停下并打印行号）
         run: |
           echo "===== flutter analyze 结果 ====="
-          flutter analyze lib/main.dart || true
-          echo "===== 依赖树检查 ====="
-          flutter pub deps --style=compact || true
+          set +e
+          flutter analyze lib/main.dart 2>&1 | tee /tmp/analyze.log
+          if grep -qE "^\s+error •" /tmp/analyze.log; then
+            echo ""
+            echo "❌❌❌ 检测到编译错误（error），下面是具体位置： ❌❌❌"
+            grep -E "^\s+error •" /tmp/analyze.log
+            echo ""
+            echo "请把上面这几行发给开发者定位。"
+            exit 1
+          fi
+          echo "✅ 代码预检通过，没有 error"
 
       - name: 检查环境资源
         run: |
