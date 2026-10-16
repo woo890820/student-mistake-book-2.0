@@ -1,0 +1,65 @@
+name: mistake_book
+description: 轻量化错题本收集 APP - 多账户、多学科、拍照收集、AI 自动识题、文档导出打印
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+# ---------------------------------------------------------------------------
+#  ★ 关键说明（请勿随意修改版本号）★
+#
+#  以下依赖全部使用「精确版本」，没有 ^ 符号。
+#
+#  原因：^2.3.3 这种写法会让 pub 自动升级到该大版本的最新版，而很多包的
+#  新版本突然要求更高的 Flutter（例如 sqflite 2.4.3 要求 Flutter 3.44）。
+#  本文件里每个版本都是实际查询 pub.dev 后确认「兼容 Flutter 3.22.0 +
+#  Dart 3.4」的最高版本，是能编译成功的组合。
+#
+#  以后如果要升级 Flutter（例如升到 3.24+），再把 ^ 加回去即可。
+# ---------------------------------------------------------------------------
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: 1.0.8
+
+  # 状态管理
+  provider: 6.1.2
+
+  # 本地数据库（2.4.3 起要求 Flutter 3.44）
+  sqflite: 2.3.3+1
+  path: 1.9.0
+  path_provider: 2.1.5
+
+  # 配置存储（2.5.x 系列要求 Flutter 3.24+）
+  shared_preferences: 2.3.3
+
+  # 网络请求（调用 AI 接口）
+  http: 1.2.2
+
+  # 拍照与相册
+  image_picker: 1.1.2
+  # 拍照后选框裁剪
+  crop_your_image: 1.1.0
+  # 权限
+  permission_handler: 11.3.1
+
+  # 文档导出（printing 5.15 起要求 Flutter 3.41）
+  docx_template: 0.4.0
+  pdf: 3.11.1
+  printing: 5.14.3
+
+  # 分享与外部打开
+  share_plus: 10.1.4
+  open_filex: 4.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - mistake_template.docx
