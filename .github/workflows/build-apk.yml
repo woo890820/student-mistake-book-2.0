@@ -29,6 +29,56 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: 智能归一化文件（无论带不带序号都能自动识别）
+        run: |
+          set -e
+          echo "===== 仓库根目录实际文件 ====="
+          ls -la
+
+          # 找出真正的 main.dart（可能被命名成 01_main.dart / mistake_main.dart 等）
+          SRC_MAIN=$(find . -maxdepth 1 -type f -iname '*main*.dart' | head -1)
+          SRC_PUB=$(find . -maxdepth 1 -type f -iname '*pubspec*.yaml' | head -1)
+          SRC_TPL=$(find . -maxdepth 1 -type f -iname '*template*.docx' | head -1)
+
+          echo "识别到 main 文件: $SRC_MAIN"
+          echo "识别到 pubspec 文件: $SRC_PUB"
+          echo "识别到 模板 文件: $SRC_TPL"
+
+          if [ -z "$SRC_MAIN" ]; then echo "错误：找不到 main.dart"; exit 1; fi
+          if [ -z "$SRC_PUB" ]; then echo "错误：找不到 pubspec.yaml"; exit 1; fi
+          if [ -z "$SRC_TPL" ]; then echo "错误：找不到 docx 模板"; exit 1; fi
+
+          # 归一化为标准名
+          cp "$SRC_MAIN" main.dart
+          cp "$SRC_PUB" pubspec.yaml
+          cp "$SRC_TPL" mistake_template.docx
+          echo "已归一化为 main.dart / pubspec.yaml / mistake_template.docx"
+
+          # 自动修复旧代码里的联网字体（CI 环境下载字体会失败）
+          if grep -q 'PdfGoogleFonts' main.dart; then
+            echo "检测到 PdfGoogleFonts，自动替换为内置字体..."
+            sed -i 's/await PdfGoogleFonts\.notoSansSCRegular()/pw.Font.helvetica()/g' main.dart
+            sed -i 's/await PdfGoogleFonts\.notoSansSCBold()/pw.Font.helveticaBold()/g' main.dart
+            sed -i 's/PdfGoogleFonts\.notoSansSCRegular()/pw.Font.helvetica()/g' main.dart
+            sed -i 's/PdfGoogleFonts\.notoSansSCBold()/pw.Font.helveticaBold()/g' main.dart
+            echo "替换完成，剩余 PdfGoogleFonts 数量: $(grep -c PdfGoogleFonts main.dart || true)"
+          fi
+
+          # 自动修复 permission_handler：若代码里有 import 但 pubspec 里没声明，删掉相关 import
+          if grep -q 'permission_handler' main.dart && ! grep -q 'permission_handler' pubspec.yaml; then
+            echo "检测到废弃的 permission_handler 引用，自动清理..."
+            sed -i "/package:permission_handler/d" main.dart
+            echo "清理完成"
+          fi
+
+          # 自动修复 pubspec 里的 ^ 通配符（会导致升级到要求更高 Flutter 的版本）
+          if grep -qE '^\s+[a-z_]+:\s*\^' pubspec.yaml; then
+            echo "检测到 ^ 通配符，自动改为精确版本锁定..."
+            sed -i -E 's/^(\s+[a-z_0-9]+):\s*\^([0-9.]+)/\1: \2/' pubspec.yaml
+          fi
+          echo "最终 pubspec.yaml 依赖："
+          cat pubspec.yaml
+
       - name: 组装工程结构
         run: |
           set -e
@@ -236,9 +286,13 @@ jobs:
           GEOF
 
           cat > android/gradle.properties << 'GEOF'
-          org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
           android.useAndroidX=true
           android.enableJetifier=true
+          android.enableR8.fullMode=false
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          org.gradle.configureondemand=false
           GEOF
 
           # ---------- 关键：Gradle 8.3 与 AGP 8.1.0 官方匹配 ----------
@@ -275,6 +329,20 @@ jobs:
 
       - name: 获取依赖
         run: flutter pub get
+
+      - name: 代码静态分析（显示所有错误行号）
+        run: |
+          echo "===== flutter analyze 结果 ====="
+          flutter analyze lib/main.dart || true
+          echo "===== 依赖树检查 ====="
+          flutter pub deps --style=compact || true
+
+      - name: 检查环境资源
+        run: |
+          echo "内存总量:"
+          free -h
+          echo "CPU:"
+          nproc
 
       - name: 编译 APK
         run: flutter build apk --release
