@@ -35,15 +35,23 @@ jobs:
           mkdir -p lib
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/res/xml
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
           mkdir -p android/app/src/main/kotlin/com/example/mistake_book
           mkdir -p android/gradle/wrapper
           cp main.dart lib/main.dart
 
+          # ---------- AndroidManifest.xml ----------
           cat > android/app/src/main/AndroidManifest.xml << 'XMLEOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.CAMERA" />
               <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-feature android:name="android.hardware.camera" android:required="false" />
               <application
@@ -74,6 +82,16 @@ jobs:
                       <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
                   </provider>
               </application>
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.VIEW" />
+                      <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  </intent>
+                  <intent>
+                      <action android:name="android.intent.action.SEND" />
+                      <data android:mimeType="*/*" />
+                  </intent>
+              </queries>
           </manifest>
           XMLEOF
 
@@ -107,36 +125,65 @@ jobs:
           class MainActivity : FlutterActivity()
           KTEOF
 
+          # ---------- 关键：使用 Flutter 提供的版本变量，不写死 ----------
           cat > android/app/build.gradle << 'GEOF'
           plugins {
               id "com.android.application"
               id "kotlin-android"
               id "dev.flutter.flutter-gradle-plugin"
           }
+
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) { flutterVersionCode = '1' }
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) { flutterVersionName = '1.0.0' }
+
           android {
-              namespace = "com.example.mistake_book"
-              compileSdk = 34
+              namespace "com.example.mistake_book"
+              compileSdk flutter.compileSdkVersion
+              ndkVersion flutter.ndkVersion
+
               compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
               }
-              kotlinOptions { jvmTarget = "17" }
+
+              kotlinOptions {
+                  jvmTarget = '1.8'
+              }
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
               defaultConfig {
-                  applicationId = "com.example.mistake_book"
-                  minSdk = 23
-                  targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0.0"
+                  applicationId "com.example.mistake_book"
+                  minSdkVersion flutter.minSdkVersion
+                  targetSdkVersion flutter.targetSdkVersion
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
               }
+
               buildTypes {
                   release {
-                      signingConfig = signingConfigs.debug
-                      minifyEnabled = false
-                      shrinkResources = false
+                      signingConfig signingConfigs.debug
+                      minifyEnabled false
+                      shrinkResources false
                   }
               }
           }
-          flutter { source = "../.." }
+
+          flutter {
+              source '../..'
+          }
           GEOF
 
           cat > android/settings.gradle << 'GEOF'
@@ -148,60 +195,83 @@ jobs:
                   assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
                   return flutterSdkPath
               }()
+
               includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
               repositories {
                   google()
                   mavenCentral()
                   gradlePluginPortal()
               }
           }
+
           plugins {
               id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-              id "com.android.application" version "8.3.2" apply false
-              id "org.jetbrains.kotlin.android" version "1.9.22" apply false
+              id "com.android.application" version "8.1.0" apply false
+              id "org.jetbrains.kotlin.android" version "1.7.10" apply false
           }
+
           include ":app"
           GEOF
 
           cat > android/build.gradle << 'GEOF'
           allprojects {
               repositories {
-                  maven { url 'https://maven.aliyun.com/repository/google' }
-                  maven { url 'https://maven.aliyun.com/repository/central' }
-                  maven { url 'https://maven.aliyun.com/repository/public' }
                   google()
                   mavenCentral()
               }
           }
-          rootProject.buildDir = "../build"
+
+          rootProject.buildDir = '../build'
           subprojects {
               project.buildDir = "${rootProject.buildDir}/${project.name}"
           }
           subprojects {
-              project.evaluationDependsOn(":app")
+              project.evaluationDependsOn(':app')
           }
+
           tasks.register("clean", Delete) {
               delete rootProject.buildDir
           }
           GEOF
 
           cat > android/gradle.properties << 'GEOF'
-          org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G
+          org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G -XX:+HeapDumpOnOutOfMemoryError
           android.useAndroidX=true
           android.enableJetifier=true
           GEOF
 
+          # ---------- 关键：Gradle 8.3 与 AGP 8.1.0 官方匹配 ----------
           cat > android/gradle/wrapper/gradle-wrapper.properties << 'GEOF'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip
+          networkTimeout=10000
+          validateDistributionUrl=true
           GEOF
 
+          # 生成应用图标（避免 @mipmap/ic_launcher 缺失）
+          python3 -c "
+          import base64, os
+          png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+          for d in ['mipmap-hdpi','mipmap-mdpi','mipmap-xhdpi','mipmap-xxhdpi','mipmap-xxxhdpi']:
+              p = 'android/app/src/main/res/' + d
+              os.makedirs(p, exist_ok=True)
+              open(p + '/ic_launcher.png','wb').write(png)
+          print('图标已生成')
+          "
+
           echo "工程结构组装完成"
+
+      - name: 创建 local.properties
+        run: |
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
+          echo "flutter.versionCode=1" >> android/local.properties
+          echo "flutter.versionName=1.0.0" >> android/local.properties
+          cat android/local.properties
 
       - name: 获取依赖
         run: flutter pub get
