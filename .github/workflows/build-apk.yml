@@ -215,4 +215,3 @@ jobs:
           name: mistake-book-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 90
-
